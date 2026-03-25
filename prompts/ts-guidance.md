@@ -1,0 +1,10 @@
+- Avoid `any`; use `unknown` with explicit narrowing when the type is genuinely unknown at a boundary (API responses, form inputs). Prefer `satisfies` over `as` for type assertions.
+- Prefer discriminated unions over bags of optional fields — make illegal states unrepresentable rather than scattering `if (x.kind === 'foo')` guards across the codebase.
+- Handle discriminated unions exhaustively with an `assertNever` helper so TypeScript errors when new variants are added.
+- Use `cn()` (clsx + tailwind-merge) for all dynamic class composition — never string concatenation or template literals with Tailwind classes, which silently produce broken merges.
+- Prefer design token classes over arbitrary values (`w-[347px]`). When a token doesn't exist, align with the design system rather than hardcoding.
+- Repeated Tailwind variant patterns belong in a `cva` definition, not duplicated across JSX.
+- Extract a custom hook when logic is reused across components or when state/effect complexity obscures the render tree.
+- Prefer URL state (search params) for shareable/bookmarkable UI state before reaching for context or external state stores.
+- `key` props must be stable IDs, not array indexes, when list items can be reordered or removed.
+- Don't fetch in `useEffect` when React Query can manage the lifecycle — prefer query/mutation hooks over manual fetch + useState pairs.

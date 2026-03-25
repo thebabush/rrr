@@ -1,0 +1,3 @@
+- Prefer leveraging the type system over defensive programming (e.g. avoid hasattr, isinstance guards, excessive None checks when proper typing would suffice). Types should be precise enough that mypy catches issues at analysis time rather than relying on runtime checks.
+- Prefer dataclasses (or Pydantic models if available) over plain dicts for structured data, unless a dict is the technically superior choice for the use case.
+- Prefer exhaustive match statements over wildcard `_` catch-alls on enums, so mypy/pyright errors when new variants are added.

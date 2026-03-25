@@ -1,0 +1,6 @@
+{
+  "name": "rrr",
+  "scripts": {
+    "build": "bun build --compile --minify src/main.ts --outfile rrr"
+  }
+}

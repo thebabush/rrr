@@ -1,0 +1,5 @@
+- Prefer strong typing with enums and newtypes over primitive types.
+- Use Result/Option and the ? operator for error handling; avoid .unwrap() outside of tests.
+- Prefer exhaustive match arms over wildcard `_` catch-alls on enums, so the compiler errors when new variants are added.
+- Move constraints and invariants into the type system when it eliminates runtime checks or makes illegal states unrepresentable — e.g., a newtype that enforces a valid range, or a state machine encoded as distinct types. Prefer this over validating the same condition repeatedly at call sites.
+- Introduce a trait only when there are multiple concrete implementations or when it meaningfully decouples a boundary (e.g., I/O from logic). Do not define traits for single-implementation abstractions — a plain struct or function is simpler and clearer.

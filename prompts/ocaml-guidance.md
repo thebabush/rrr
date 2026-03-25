@@ -1,0 +1,8 @@
+- Prefer exhaustive pattern matching over wildcard `_` catch-alls on variants — the compiler will error when new variants are added.
+- Use `result` and `option` with combinators (`map`, `bind`, `Result.get_ok`) for expected errors; reserve exceptions for truly unexpected failures.
+- Encode invariants in the type system: phantom types, abstract types behind module signatures, or GADTs — rather than validating the same condition at every call site.
+- Expose only what is needed via `.mli` signatures; keep implementation details private to the module. Prefer narrow signatures over wide ones.
+- Use labeled and optional arguments for functions with multiple same-type parameters to prevent argument-order bugs.
+- Prefer `ppx_deriving` (or `ppx_sexp_conv`, `ppx_compare`) over handwritten `equal`, `compare`, `pp` boilerplate.
+- Avoid `Obj.magic` and other unsafe escapes; if you need them, isolate them behind a typed interface.
+- If `ocamlc`, `ocamlfind`, or other toolchain binaries are missing, run `eval $(opam env)` to load the opam environment into the current shell, then retry.
