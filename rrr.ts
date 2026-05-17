@@ -169,6 +169,11 @@ function exec(cmd: string, args: string[], cwd = process.cwd(), timeoutMs = 120_
 	return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", code: r.status ?? 1 };
 }
 
+// Lists tracked + untracked-but-not-ignored files, honoring .gitignore.
+function gitLsFiles(cwd: string, ...patterns: string[]): string {
+	return exec("git", ["ls-files", "-co", "--exclude-standard", ...patterns], cwd).stdout;
+}
+
 // ---------------------------------------------------------------------------
 // Tooling detection
 // ---------------------------------------------------------------------------
@@ -181,8 +186,7 @@ function detectPython(cwd: string): { ruff: boolean; mypy: boolean } {
 }
 
 function findCargoRoots(cwd: string): string[] {
-	const result = exec("git", ["ls-files", "**/Cargo.toml", "Cargo.toml"], cwd);
-	const dirs = result.stdout
+	const dirs = gitLsFiles(cwd, "**/Cargo.toml", "Cargo.toml")
 		.split("\n")
 		.filter(Boolean)
 		.map(f => dirname(f))
@@ -202,8 +206,7 @@ function detectPytest(cwd: string): boolean {
 }
 
 function findDuneRoots(cwd: string): string[] {
-	const result = exec("git", ["ls-files", "**/dune-project", "dune-project"], cwd);
-	const dirs = result.stdout
+	const dirs = gitLsFiles(cwd, "**/dune-project", "dune-project")
 		.split("\n")
 		.filter(Boolean)
 		.map(f => dirname(f))
@@ -323,8 +326,8 @@ function runChecks(langs: Langs): Checks {
 			for (const root of roots) {
 				linters.push(runTool("dune", ["build", "@check"], root));
 				if (detectOcamlformat(root)) {
-					const mlFiles = exec("git", ["ls-files", "*.ml", "**/*.ml", "*.mli", "**/*.mli"], root)
-						.stdout.trim().split("\n").filter(Boolean);
+					const mlFiles = gitLsFiles(root, "*.ml", "**/*.ml", "*.mli", "**/*.mli")
+						.trim().split("\n").filter(Boolean);
 					if (mlFiles.length > 0) {
 						linters.push(runTool("ocamlformat", ["--check", ...mlFiles], root));
 					}
@@ -387,7 +390,7 @@ function buildDiffPrompt(stat: string, target: string, checks: Checks, noStyle: 
 }
 
 function buildProjectPrompt(checks: Checks, noStyle: boolean): string {
-	const files = exec("git", ["ls-files"], process.cwd()).stdout.trim();
+	const files = gitLsFiles(process.cwd()).trim();
 	let p = "Review the overall project structure and code quality. Read source files as needed. Focus on:\n";
 	p += "- Architecture and design issues\n";
 	p += guidance(checks, noStyle);
@@ -398,7 +401,7 @@ function buildProjectPrompt(checks: Checks, noStyle: boolean): string {
 }
 
 function buildPythonStylePrompt(checks: Checks): string {
-	const files = exec("git", ["ls-files", "*.py", "**/*.py"], process.cwd()).stdout.trim();
+	const files = gitLsFiles(process.cwd(), "*.py", "**/*.py").trim();
 	let p = prompt("python-style.md") + "\n\n";
 	p = appendChecks(p, checks);
 	p += `## Python Files\n\n\`\`\`\n${files}\n\`\`\`\n\nRead every file above and apply the style rules. Fix everything directly.`;
@@ -435,7 +438,7 @@ async function main() {
 
 	// ── path ─────────────────────────────────────────────────────────────────
 	if (t.kind === "path") {
-		const files = exec("git", ["ls-files", t.glob], cwd).stdout.trim();
+		const files = gitLsFiles(cwd, t.glob).trim();
 		if (!files) { process.stderr.write(`No tracked files at ${t.glob}.\n`); process.exit(2); }
 		const langs = resolveLangs(args, extsFromFiles(files));
 		const checks = runChecks(langs);
@@ -452,7 +455,7 @@ async function main() {
 	if (args.python && !args.noStyle && t.kind === "unstaged") {
 		const diff = exec("git", ["diff"], cwd).stdout.trim();
 		if (!diff) {
-			const files = exec("git", ["ls-files", "*.py", "**/*.py"], cwd).stdout.trim();
+			const files = gitLsFiles(cwd, "*.py", "**/*.py").trim();
 			if (!files) { process.stderr.write("No Python files found.\n"); process.exit(2); }
 			const checks = runChecks({ python: true, rust: false, forcedRust: false, ocaml: false, typescript: false });
 			process.stdout.write(buildPythonStylePrompt(checks));
