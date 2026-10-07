@@ -26,6 +26,9 @@ symlink() {
 
   if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
     echo "  (exists) $dst -> $src"
+  elif [ -e "$dst" ] && [ ! -L "$dst" ]; then
+    echo "  Conflict: $dst already exists and is not a symlink; move it before retrying." >&2
+    return 1
   else
     ln -sfn "$src" "$dst"
     echo "  (linked) $dst -> $src"

@@ -41,15 +41,17 @@ its own guidance to the prompt and runs the project's tooling:
 
 - **Python**: `pre-commit run --all-files` when `.pre-commit-config.yaml` exists, then
   `ruff check` + `ruff format --check`, `ty` and/or `mypy` (whichever `pyproject.toml`
-  configures) unless the pre-commit config already runs them, and `pytest tests` when a
+  configures) unless a successful pre-commit run covers them with recognized hook IDs
+  (Ruff linting and formatting are checked separately), and `pytest tests` when a
   `tests/` directory exists. Tools run through `uv run --locked` when there is a `uv.lock`,
   otherwise directly from `.venv/bin`.
 - **Rust**: `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`, and
   `cargo test` per `Cargo.toml` root, with `--locked` when a `Cargo.lock` exists.
 - **OCaml**: `dune build @check`, `ocamlformat --check` when `.ocamlformat` exists,
   `dune runtest`, per `dune-project` root.
-- **TypeScript**: `tsc --noEmit`, `eslint .`, `biome check` when configured and
-  installed in `node_modules`. React guidance is added for `.tsx`/`.jsx` changes or
+- **TypeScript**: `tsc --noEmit`, `eslint .`, `biome check` when configured,
+  using binaries from `node_modules` and reporting missing tools as NOT RUN.
+  React guidance is added for `.tsx`/`.jsx` changes or
   when `react` is a `package.json` dependency.
 
 A configured tool that is missing is reported as NOT RUN rather than failing the review.
@@ -76,6 +78,8 @@ Exit codes: `0` = prompt ready, `2` = nothing to review, `1` = error.
 
 Links `.claude/skills/rrr` and `.claude/skills/rrr-auto` into the skill directories
 for Claude Code, pi-mono, and codex. opencode reads `~/.claude/skills/` automatically.
+Existing files or directories at a destination are preserved and reported as conflicts;
+move them before retrying installation.
 
 **`/rrr`** — manual invocation, always available in any session.
 

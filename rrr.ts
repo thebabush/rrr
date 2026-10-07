@@ -68,7 +68,7 @@ interface Tooling {
 	// for a uv-managed project, empty to call .venv/bin/<tool> directly.
 	python: { ruff: boolean; mypy: boolean; ty: boolean; runner: string[] };
 	preCommit: boolean;
-	preCommitHooks: { ruff: boolean; mypy: boolean; ty: boolean }; // all false without a config
+	preCommitHooks: { ruffCheck: boolean; ruffFormat: boolean; mypy: boolean; ty: boolean };
 	pytest: boolean;
 	cargoRoots: string[];
 	duneRoots: string[];
@@ -194,6 +194,10 @@ function git(args: string[], cwd = process.cwd()): string {
 // git's well-known empty tree object; base for diffing a root commit.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
+function uncommittedBase(cwd: string): string {
+	return exec("git", ["rev-parse", "--verify", "--quiet", "HEAD"], cwd).code === 0 ? "HEAD" : EMPTY_TREE;
+}
+
 // Lists tracked + untracked-but-not-ignored files, honoring .gitignore.
 function gitLsFiles(cwd: string, ...patterns: string[]): string {
 	return git(["ls-files", "-co", "--exclude-standard", ...patterns], cwd);
@@ -223,17 +227,18 @@ function detectPython(cwd: string): Tooling["python"] {
 	};
 }
 
-// Which of the Python linters the pre-commit config already runs, so they are
-// not run a second time on their own. A hook line reads like
-// `entry: uv run --locked ty check`, `id: ruff-check` or `repo: .../mypy`.
+// Recognize explicit hook IDs, not repository URLs or comments. Unknown/custom
+// hooks conservatively leave the standalone checks enabled.
 function detectPreCommitHooks(cwd: string): Tooling["preCommitHooks"] {
 	const config = join(cwd, ".pre-commit-config.yaml");
-	if (!existsSync(config)) return { ruff: false, mypy: false, ty: false };
+	if (!existsSync(config)) return { ruffCheck: false, ruffFormat: false, mypy: false, ty: false };
 	const content = readFileSync(config, "utf8");
+	const ids = new Set([...content.matchAll(/^\s*-?\s*id:\s*["']?([\w-]+)["']?\s*(?:#.*)?$/gm)].map(match => match[1]));
 	return {
-		ruff: /\bruff\b/.test(content),
-		mypy: /\bmypy\b/.test(content),
-		ty:   /\bty\b/.test(content),
+		ruffCheck: ids.has("ruff") || ids.has("ruff-check"),
+		ruffFormat: ids.has("ruff-format"),
+		mypy: ids.has("mypy"),
+		ty: ids.has("ty"),
 	};
 }
 
@@ -270,14 +275,13 @@ function detectOcamlformat(root: string): boolean {
 }
 
 function detectTypeScript(cwd: string): { tsc: boolean; eslint: boolean; biome: boolean } {
-	const tsc = existsSync(join(cwd, "tsconfig.json")) && existsSync(join(cwd, "node_modules/.bin/tsc"));
+	const tsc = existsSync(join(cwd, "tsconfig.json"));
 	const eslintConfigs = [
 		"eslint.config.js", "eslint.config.ts", "eslint.config.mjs", "eslint.config.cjs",
 		".eslintrc.js", ".eslintrc.cjs", ".eslintrc.json", ".eslintrc.yml", ".eslintrc.yaml", ".eslintrc",
 	];
-	const eslint = existsSync(join(cwd, "node_modules/.bin/eslint")) &&
-		eslintConfigs.some(f => existsSync(join(cwd, f)));
-	const biome = existsSync(join(cwd, "biome.json")) && existsSync(join(cwd, "node_modules/.bin/biome"));
+	const eslint = eslintConfigs.some(f => existsSync(join(cwd, f)));
+	const biome = ["biome.json", "biome.jsonc"].some(f => existsSync(join(cwd, f)));
 	return { tsc, eslint, biome };
 }
 
@@ -358,6 +362,10 @@ function extsFromFiles(nameOnly: string): Set<string> {
 const SLOW_TOOL_TIMEOUT_MS = 600_000;
 
 function runTool(cmd: string, toolArgs: string[], cwd: string, timeoutMs = 120_000): string {
+	return runToolResult(cmd, toolArgs, cwd, timeoutMs).report;
+}
+
+function runToolResult(cmd: string, toolArgs: string[], cwd: string, timeoutMs = 120_000): { report: string; passed: boolean } {
 	const label = `${cmd} ${toolArgs.join(" ")}`;
 	process.stderr.write(`  ${label}…\n`);
 	const r = exec(cmd, toolArgs, cwd, timeoutMs);
@@ -367,14 +375,14 @@ function runTool(cmd: string, toolArgs: string[], cwd: string, timeoutMs = 120_0
 			code === "ENOENT"    ? `${cmd} not found; is it installed in this project?` :
 			code === "ETIMEDOUT" ? `timed out after ${timeoutMs / 1000}s` :
 			r.error.message;
-		return `### ${label} (NOT RUN)\n\n\`\`\`\n${why}\n\`\`\``;
+		return { report: `### ${label} (NOT RUN)\n\n\`\`\`\n${why}\n\`\`\``, passed: false };
 	}
 	// uv itself ran fine but the requested tool is not in the project environment.
 	if (cmd === "uv" && r.code !== 0 && /Failed to spawn/.test(r.stderr)) {
-		return `### ${label} (NOT RUN)\n\n\`\`\`\n${r.stderr.trim()}\n\`\`\``;
+		return { report: `### ${label} (NOT RUN)\n\n\`\`\`\n${r.stderr.trim()}\n\`\`\``, passed: false };
 	}
 	const out = [r.stdout, r.stderr].filter(Boolean).join("\n").trim();
-	return `### ${label} (${r.code === 0 ? "PASSED ✓" : "FAILED ✗"})\n\n\`\`\`\n${out || "(no output)"}\n\`\`\``;
+	return { report: `### ${label} (${r.code === 0 ? "PASSED ✓" : "FAILED ✗"})\n\n\`\`\`\n${out || "(no output)"}\n\`\`\``, passed: r.code === 0 };
 }
 
 // Command and args to run a project Python tool through the project's runner,
@@ -392,19 +400,21 @@ function runChecks(langs: Langs, tooling: () => Tooling): Checks {
 	if (langs.python) {
 		const t = tooling();
 		const hooks = t.preCommitHooks;
-		// pre-commit runs its own hooks; only run the linters it does not cover.
+		let preCommitPassed = false;
+		// Only successful pre-commit runs can stand in for standalone checks.
 		if (t.preCommit) {
 			process.stderr.write("Running pre-commit…\n");
-			linters.push(runTool(...pyCmd(t, "pre-commit", "run", "--all-files"), cwd, SLOW_TOOL_TIMEOUT_MS));
+			const result = runToolResult(...pyCmd(t, "pre-commit", "run", "--all-files"), cwd, SLOW_TOOL_TIMEOUT_MS);
+			linters.push(result.report);
+			preCommitPassed = result.passed;
 		}
-		const ruff = t.python.ruff && !hooks.ruff;
-		const ty   = t.python.ty   && !hooks.ty;
-		const mypy = t.python.mypy && !hooks.mypy;
-		if (ruff || mypy || ty) process.stderr.write("Running Python linters…\n");
-		if (ruff) {
-			linters.push(runTool(...pyCmd(t, "ruff", "check", "."), cwd));
-			linters.push(runTool(...pyCmd(t, "ruff", "format", "--check", "."), cwd));
-		}
+		const ruffCheck = t.python.ruff && !(preCommitPassed && hooks.ruffCheck);
+		const ruffFormat = t.python.ruff && !(preCommitPassed && hooks.ruffFormat);
+		const ty   = t.python.ty   && !(preCommitPassed && hooks.ty);
+		const mypy = t.python.mypy && !(preCommitPassed && hooks.mypy);
+		if (ruffCheck || ruffFormat || mypy || ty) process.stderr.write("Running Python linters…\n");
+		if (ruffCheck) linters.push(runTool(...pyCmd(t, "ruff", "check", "."), cwd));
+		if (ruffFormat) linters.push(runTool(...pyCmd(t, "ruff", "format", "--check", "."), cwd));
 		if (ty)   linters.push(runTool(...pyCmd(t, "ty", "check"), cwd));
 		if (mypy) linters.push(runTool(...pyCmd(t, "mypy", "."), cwd));
 		if (t.pytest) {
@@ -576,7 +586,7 @@ function main() {
 
 	// ── python style (--python with no diff target → full style review) ────
 	if (args.python && !args.noStyle && t.kind === "uncommitted") {
-		const diff = git(["diff", "HEAD"], cwd).trim();
+		const diff = git(["diff", uncommittedBase(cwd)], cwd).trim();
 		if (!diff && !untrackedFiles(cwd)) {
 			const files = gitLsFiles(cwd, "*.py").trim();
 			if (!files) { process.stderr.write("No Python files found.\n"); process.exit(2); }
@@ -592,17 +602,25 @@ function main() {
 
 	switch (t.kind) {
 		case "uncommitted":
-			gitArgs = ["diff", "HEAD"];
+			gitArgs = ["diff", uncommittedBase(cwd)];
 			targetLabel = "uncommitted changes";
 			break;
 		case "staged":
 			gitArgs = ["diff", "--cached"];
 			targetLabel = "staged changes";
 			break;
-		case "last":
-			gitArgs = ["diff", `HEAD~${t.n}`, "HEAD"];
+		case "last": {
+			let base = `HEAD~${t.n}`;
+			if (t.n > 0 && exec("git", ["rev-parse", "--verify", "--quiet", base], cwd).code !== 0) {
+				// Only substitute the empty tree when the requested oldest commit
+				// exists and truly has no parents; keep oversized ranges as errors.
+				const oldest = exec("git", ["rev-list", "--parents", "-n", "1", `HEAD~${t.n - 1}`], cwd);
+				if (oldest.code === 0 && oldest.stdout.trim().split(/\s+/).length === 1) base = EMPTY_TREE;
+			}
+			gitArgs = ["diff", base, "HEAD"];
 			targetLabel = t.n === 1 ? "the last commit" : `the last ${t.n} commits`;
 			break;
+		}
 		case "since": {
 			const since = sinceToGit(t.dur);
 			const hashes = git(["log", `--since=${since}`, "--format=%H"], cwd).trim();
