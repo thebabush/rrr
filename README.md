@@ -54,6 +54,14 @@ its own guidance to the prompt and runs the project's tooling:
 
 A configured tool that is missing is reported as NOT RUN rather than failing the review.
 
+## Smoke test
+
+```bash
+./smoke.sh
+```
+
+Builds a throwaway repo and checks exit codes and prompt contents for every target.
+
 ## Output
 
 The review prompt goes to stdout. Progress goes to stderr.
