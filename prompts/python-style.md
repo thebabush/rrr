@@ -19,6 +19,7 @@ If a file is already clean, skip it. For everything else, fix it directly.
 
 ### Precision over laziness
 - No `Any` unless truly unavoidable (add a comment justifying it).
+- Every function is annotated, parameters and return, including tests, fixtures, and scripts.
 - No bare `dict` or `list` without type parameters.
 - Use `X | None` instead of `Optional[X]`.
 - Use `type` / `TypeAlias` for complex compound types — don't inline them.
@@ -34,12 +35,15 @@ If a file is already clean, skip it. For everything else, fix it directly.
 ### Data modeling
 - Prefer `dataclass` (or Pydantic `BaseModel`) over plain dicts for structured data.
 - Prefer `NamedTuple` over plain tuples for multi-field return types.
+- Use `TypedDict` only where an API requires dictionary-shaped records; otherwise a dataclass or model.
+- Validate external JSON at the boundary and pass typed values internally; do not thread raw dicts through the code.
 
 ### Defensive programming → type system
 - Remove `isinstance` / `hasattr` guards that exist to satisfy the type checker.
+- Replace blanket `# type: ignore` with a suppression that names the diagnostic and a comment saying why it is safe; prefer fixing the type.
 - Remove redundant `assert isinstance(...)` when the type is already known.
 - Tighten types instead of patching with `if x is not None` chains.
-- Prefer exhaustive `match` over wildcard `_` catch-alls on enums, so mypy/pyright errors when new variants are added.
+- Prefer exhaustive `match` over wildcard `_` catch-alls on enums, so the type checker errors when new variants are added.
 
 ### Imports & modern syntax
 - Use native `X | Y` union syntax (Python 3.10+).

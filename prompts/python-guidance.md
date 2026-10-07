@@ -1,3 +1,6 @@
-- Prefer leveraging the type system over defensive programming (e.g. avoid hasattr, isinstance guards, excessive None checks when proper typing would suffice). Types should be precise enough that mypy catches issues at analysis time rather than relying on runtime checks.
+- Prefer leveraging the type system over defensive programming (e.g. avoid hasattr, isinstance guards, excessive None checks when proper typing would suffice). Types should be precise enough that the type checker (ty, mypy, or pyright) catches issues at analysis time rather than relying on runtime checks.
 - Prefer dataclasses (or Pydantic models if available) over plain dicts for structured data, unless a dict is the technically superior choice for the use case.
-- Prefer exhaustive match statements over wildcard `_` catch-alls on enums, so mypy/pyright errors when new variants are added.
+- Prefer exhaustive match statements over wildcard `_` catch-alls on enums, so the type checker errors when new variants are added.
+- Annotate every function's parameters and return value, including tests and scripts. Parameterize container types; no bare `dict`, `list`, or other unparameterized generics.
+- Validate external JSON at the boundary (Pydantic or an explicit JSON-value type) and pass typed values internally. Isolate unavoidable untyped third-party interfaces in small adapters and narrow their outputs.
+- Fix type errors rather than suppressing them. Any necessary suppression must name the specific diagnostic and explain why it is safe.

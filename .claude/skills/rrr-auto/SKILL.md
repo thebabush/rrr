@@ -4,4 +4,4 @@ description: Proactive code review. When the user completes a meaningful coding 
 user-invocable: false
 ---
 
-!`[ -e .rrr ] && printf "This project has opted into automatic code review.\n\nAfter the user completes a meaningful coding task, invoke /rrr proactively to review their changes.\n"`
+!`[ -e .rrr ] && printf "This project has opted into automatic code review.\n\nAfter the user completes a meaningful coding task, invoke /rrr proactively to review their changes.\n" || true`
